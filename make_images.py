@@ -88,7 +88,7 @@ def make_images_main():
     counter = 0
     for x,y in coords[['x', 'y']]:
         for size in [50, 100, 150, 200]:
-            numpy_x, numpy_y = fits2numpycoords(x, y, data.shape[1])
+            numpy_x, numpy_y = fits2numpycoords(x, y, data.shape[0])
             subimage = data[max(numpy_x-size,0) : min(numpy_x+size, data.shape[0]),\
                 max(numpy_y-size,0) : min(numpy_y+size, data.shape[1]), :]
             im = Image.fromarray(np.uint8(subimage))
