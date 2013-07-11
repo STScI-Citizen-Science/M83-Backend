@@ -12,6 +12,7 @@ viana@stsci.edu
 
 import copy
 import numpy as np
+import os
 import pyfits
 import yaml
 import Image
@@ -55,36 +56,10 @@ def fits2numpycoords(x_in, y_in, ymax):
     x_out = ymax - y_in
     return x_out, y_out
 
-
-def get_coords():
+def make_images(data, coords):
     '''
+    Loop to create the outputs images
     '''
-    if socket.gethostname() == SETTINGS['hostname']:
-        coord_path = '../m83_handselectcl_bcw_edit_jan_20_2010_UPDATED.data'
-    else:    
-        coord_path = '/user/hammer/M83/F1/m83_handselectcl_bcw_edit_jan_20_2010_UPDATED.data'
-    coords = np.genfromtxt(coord_path, names=True, dtype=None)
-    return coords
-
-
-def get_image_data():
-    '''
-    Get the image data.
-    '''
-    if socket.gethostname() == SETTINGS['hostname']:
-        tiff_path = '../M83-P1-UByIH.tif'
-    else:
-        tiff_path = '/user/hammer/M83/F1/M83-P1-UByIH.tif'
-    data = np.asarray(Image.open(tiff_path))
-    return data
-
-
-def make_images_main():
-    '''
-    The main controller.
-    '''
-    data = get_image_data()
-    coords = get_coords()
     counter = 0
     for x,y in coords[['x', 'y']]:
         for size in [50, 100, 150, 200]:
@@ -92,10 +67,31 @@ def make_images_main():
             subimage = data[max(numpy_x-size,0) : min(numpy_x+size, data.shape[0]),\
                 max(numpy_y-size,0) : min(numpy_y+size, data.shape[1]), :]
             im = Image.fromarray(np.uint8(subimage))
-            im.save('../outputs/f1_{}_{}_{}pix.tiff'.format(int(x), int(y), 2*size))
+            im.save('../outputs/f1_{}_{}_{}pix.jpg'.format(int(x), int(y), 2*size))
             counter += 1
             if counter % 100 == 0:
                 print counter
+
+
+def make_images_main():
+    '''
+    The main controller. Builds a list of data and coordinates files 
+    for each field. The sets the base path for the files based on 
+    the machine being used. Finally loops over the data to create the 
+    images.
+    '''
+    field_list = [\
+        {'data':'M83-P1-UByIH.jpg', 'coords':'m83_handselectcl_bcw_edit_jan_20_2010_UPDATED.data'}]
+
+    if socket.gethostname() == SETTINGS['hostname']:
+        root_path = '../data'
+    else:
+        raise ValueError("I don't know where the files are on machine " + socket.gethostname())
+
+    for field in field_list:
+        data = np.asarray(Image.open(os.path.join(root_path, field['data'])))
+        coords = np.genfromtxt(os.path.join(root_path, field['coords']), names=True, dtype=None)
+        make_images(data, coords)
 
 
 # ----------------------------------------------------------------------------
