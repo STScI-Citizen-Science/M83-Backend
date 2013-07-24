@@ -56,7 +56,7 @@ def fits2numpycoords(x_in, y_in, ymax):
     x_out = ymax - y_in
     return x_out, y_out
 
-def make_images(data, coords):
+def make_images(data, coords, field):
     '''
     Loop to create the outputs images
     '''
@@ -64,10 +64,11 @@ def make_images(data, coords):
     for x,y in coords[['x', 'y']]:
         for size in [50, 100, 150, 200]:
             numpy_x, numpy_y = fits2numpycoords(x, y, data.shape[0])
-            subimage = data[max(numpy_x-size,0) : min(numpy_x+size, data.shape[0]),\
-                max(numpy_y-size,0) : min(numpy_y+size, data.shape[1]), :]
+            subimage = data[\
+                max(numpy_x-size,0): min(numpy_x+size, data.shape[0]),\
+                max(numpy_y-size,0): min(numpy_y+size, data.shape[1]), :]
             im = Image.fromarray(np.uint8(subimage))
-            im.save('../outputs/f1_{}_{}_{}pix.jpg'.format(int(x), int(y), 2*size))
+            im.save('../outputs/{}_{}_{}_{}pix.jpg'.format(field, int(x), int(y), 2*size))
             counter += 1
             if counter % 100 == 0:
                 print counter
@@ -81,7 +82,8 @@ def make_images_main():
     images.
     '''
     field_list = [\
-        {'data':'M83-P1-UByIH.jpg', 'coords':'m83_handselectcl_bcw_edit_jan_20_2010_UPDATED.data'}]
+        {'field':'f1', 'data':'M83-P1-UByIH.jpg', 'coords':'m83_handselectcl_bcw_edit_jan_20_2010_UPDATED.data'},
+        {'field':'f7', 'data':'M83-P7-UbyIH.jpg', 'coords':'cat_m83_f7_jul_1_2013.txt'}]
 
     if socket.gethostname() == SETTINGS['hostname']:
         root_path = '../data'
@@ -90,8 +92,9 @@ def make_images_main():
 
     for field in field_list:
         data = np.asarray(Image.open(os.path.join(root_path, field['data'])))
-        coords = np.genfromtxt(os.path.join(root_path, field['coords']), names=True, dtype=None)
-        make_images(data, coords)
+        coords = np.genfromtxt(os.path.join(root_path, field['coords']), 
+            names=True, dtype=None)
+        make_images(data, coords, field['field'])
 
 
 # ----------------------------------------------------------------------------
