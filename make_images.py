@@ -56,23 +56,50 @@ def fits2numpycoords(x_in, y_in, ymax):
     x_out = ymax - y_in
     return x_out, y_out
 
+
+def get_coords(coords_file):
+    '''
+    Because the text files with the coordinates are malformed they can't be 
+    read in by numpy.genfromtxt. So instead this generated the coordinate 
+    data. I'm doing it this way so we have a record of what's being done to 
+    the input files.
+    '''
+    with open(coords_file, 'r') as f:
+        data = f.readlines()
+    data = [line.strip().split() for line in data]
+    print '{} initial files'.format(len(data))
+    data = [line for line in data if len(line) == 7]
+    print '{} files after column count trim.'.format(len(data))
+    data = [line for line in data if '#' not in line]
+    print '{} files after commented line removal.'.format(len(data))
+    data = [line for line in data if line[3] != 8]
+    print '{} files after backgroud galaxy removal.'.format(len(data))
+    data = [line for line in data if line[0][0] != '#']
+    data = [{'x':line[0], 'y':line[1]} for line in data]
+    return data
+
+
 def make_images(data, coords, field):
     '''
     Loop to create the outputs images
     '''
     counter = 0
-    for x,y in coords[['x', 'y']]:
-        for size in [50, 100, 150, 200]:
-            numpy_x, numpy_y = fits2numpycoords(x, y, data.shape[0])
-            subimage = data[\
-                max(numpy_x-size,0): min(numpy_x+size, data.shape[0]),\
-                max(numpy_y-size,0): min(numpy_y+size, data.shape[1]), :]
-            im = Image.fromarray(np.uint8(subimage))
-            im.save('../outputs/{}_{}_{}_{}pix.jpg'.format(field, int(x), int(y), 2*size))
-            counter += 1
-            if counter % 100 == 0:
-                print counter
-
+    for coords_dict in coords:
+        x = int(float(coords_dict['x'].strip('.')))
+        y = int(float(coords_dict['y'].strip('.')))
+        for size in [150]:
+            try:
+                numpy_x, numpy_y = fits2numpycoords(x, y, data.shape[0])
+                subimage = data[\
+                    max(numpy_x-size,0): min(numpy_x+size, data.shape[0]),\
+                    max(numpy_y-size,0): min(numpy_y+size, data.shape[1]), :]
+                im = Image.fromarray(np.uint8(subimage))
+                im.save('../outputs/f{}/f{}_{}_{}_{}pix.jpg'.format(field, field, int(x), int(y), 2*size))
+                counter += 1
+                if counter % 100 == 0:
+                    print '{} tiles done.'.format(counter)
+            except ValueError as err:
+                print 'ValueError: {0} : {1}, ({2},{3})'.format(err, field, x, y)
 
 def make_images_main():
     '''
@@ -81,20 +108,19 @@ def make_images_main():
     the machine being used. Finally loops over the data to create the 
     images.
     '''
-    field_list = [\
-        {'field':'f1', 'data':'M83-P1-UByIH.jpg', 'coords':'m83_handselectcl_bcw_edit_jan_20_2010_UPDATED.data'},
-        {'field':'f7', 'data':'M83-P7-UbyIH.jpg', 'coords':'cat_m83_f7_jul_1_2013.txt'}]
 
     if socket.gethostname() == SETTINGS['hostname']:
         root_path = '../data'
     else:
-        raise ValueError("I don't know where the files are on machine " + socket.gethostname())
+        raise ValueError("I don't know where the files are on machine {}".format(socket.gethostname()))
 
-    for field in field_list:
-        data = np.asarray(Image.open(os.path.join(root_path, field['data'])))
-        coords = np.genfromtxt(os.path.join(root_path, field['coords']), 
-            names=True, dtype=None)
-        make_images(data, coords, field['field'])
+    for field_counter in range(1,8):
+        print 'Processing field {}'.format(field_counter)
+        data = np.asarray(Image.open(os.path.join(root_path, 
+            'M83-P{}-UByIH.jpg'.format(field_counter))))
+        coords = get_coords(os.path.join(root_path, 
+            'cat_m83_f{}_aug_25_2013_manual.txt'.format(field_counter)))
+        make_images(data, coords, field_counter)
 
 
 # ----------------------------------------------------------------------------
