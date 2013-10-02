@@ -15,7 +15,7 @@ import numpy as np
 import os
 import pyfits
 import yaml
-import Image
+#import Image
 import sys
 import socket
 
@@ -33,13 +33,15 @@ def get_settings():
     return data
 
 SETTINGS = get_settings()
+INPUT_PATH = SETTINGS['input_path']
+OUTPUT_PATH = SETTINGS['output_path']
 
 # Import local PIL patch
-if socket.gethostname() == SETTINGS['hostname']:
-    import_path = '/home/acv/Dropbox/Work/MTPipeline/Code/imaging/'
-else:
-    import_path = '/Users/viana/Dropbox/Work/MTPipeline/Code/imaging/'
-sys.path.append(import_path)
+#if socket.gethostname() == SETTINGS['hostname']:
+#    import_path = '/home/acv/Dropbox/Work/MTPipeline/Code/imaging/'
+#else:
+#    import_path = '/Users/viana/Dropbox/Work/MTPipeline/Code/imaging/'
+#sys.path.append(import_path)
 from PIL import Image
 
 # ----------------------------------------------------------------------------
@@ -63,19 +65,11 @@ def get_coords(coords_file):
     read in by numpy.genfromtxt. So instead this generated the coordinate 
     data. I'm doing it this way so we have a record of what's being done to 
     the input files.
+
+    # flag = 8 is bkg galaxy which should be removed
+    # dk_fl = 1 means use higher contrast image
     '''
-    with open(coords_file, 'r') as f:
-        data = f.readlines()
-    data = [line.strip().split() for line in data]
-    print '{} initial files'.format(len(data))
-    data = [line for line in data if len(line) == 7]
-    print '{} files after column count trim.'.format(len(data))
-    data = [line for line in data if '#' not in line]
-    print '{} files after commented line removal.'.format(len(data))
-    data = [line for line in data if line[3] != 8]
-    print '{} files after backgroud galaxy removal.'.format(len(data))
-    data = [line for line in data if line[0][0] != '#']
-    data = [{'x':line[0], 'y':line[1]} for line in data]
+    data = np.genfromtxt(coords_file, delimiter=',', names=True)
     return data
 
 
@@ -84,22 +78,25 @@ def make_images(data, coords, field):
     Loop to create the outputs images
     '''
     counter = 0
-    for coords_dict in coords:
-        x = int(float(coords_dict['x'].strip('.')))
-        y = int(float(coords_dict['y'].strip('.')))
-        for size in [150]:
+    for row in coords:
+        x = int(row['x'])
+        y = int(row['y'])
+        for size in [50, 150]:
             try:
                 numpy_x, numpy_y = fits2numpycoords(x, y, data.shape[0])
                 subimage = data[\
                     max(numpy_x-size,0): min(numpy_x+size, data.shape[0]),\
                     max(numpy_y-size,0): min(numpy_y+size, data.shape[1]), :]
                 im = Image.fromarray(np.uint8(subimage))
-                im.save('../outputs/f{}/f{}_{}_{}_{}pix.jpg'.format(field, field, int(x), int(y), 2*size))
+                im.save(os.path.join(
+                    OUTPUT_PATH, 
+                    'f{}/f{}_{}_{}_{}pix.jpg'.format(field, field, int(x), int(y), 2*size)))
                 counter += 1
                 if counter % 100 == 0:
                     print '{} tiles done.'.format(counter)
             except ValueError as err:
                 print 'ValueError: {0} : {1}, ({2},{3})'.format(err, field, x, y)
+
 
 def make_images_main():
     '''
@@ -108,20 +105,14 @@ def make_images_main():
     the machine being used. Finally loops over the data to create the 
     images.
     '''
-
-    if socket.gethostname() == SETTINGS['hostname']:
-        root_path = '../data'
-    else:
-        raise ValueError("I don't know where the files are on machine {}".format(socket.gethostname()))
-
+    coords = get_coords(os.path.join(INPUT_PATH, 
+        'cat_m83_manual_catalog_all_fields_for_alex_sep_30_2013-1.csv'))
     for field_counter in range(1,8):
         print 'Processing field {}'.format(field_counter)
-        data = np.asarray(Image.open(os.path.join(root_path, 
+        field_coords = coords[np.where(coords['chip'] == field_counter)]
+        image_data = np.asarray(Image.open(os.path.join(INPUT_PATH, 
             'M83-P{}-UByIH.jpg'.format(field_counter))))
-        coords = get_coords(os.path.join(root_path, 
-            'cat_m83_f{}_aug_25_2013_manual.txt'.format(field_counter)))
-        make_images(data, coords, field_counter)
-
+        make_images(image_data, field_coords, field_counter)
 
 # ----------------------------------------------------------------------------
 # For command line execution
