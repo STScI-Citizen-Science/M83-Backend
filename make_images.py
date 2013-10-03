@@ -132,7 +132,13 @@ def make_images_main():
 
 def make_metadata(field_coords, record_counter):
     '''
-    Appends the metadata file.
+    Appends the metadata file. Note that the id is a unique identifier 
+    in the metadata file. The catalog_id field is the tot_id field in 
+    the catalog file. It's neccissary to have a seperate id field for 
+    the metadata because there are multiple image sizes associated 
+    with catalog_id value. Also, we use the tot_id value from the 
+    catalog for the catalog_id because the id value in the catalog is 
+    unique to each field but not unique to the entire catalog. 
     '''
     with open(os.path.join(OUTPUT_PATH, 'metadata/m83_metadata.csv'), 'w') as f:
         if record_counter == 1:
@@ -140,7 +146,7 @@ def make_metadata(field_coords, record_counter):
         for record in field_coords:
             for size in OUTPUT_SIZE_LIST:
                 metadata = '{}, {}, {}, {}, {}, {}, {}, {}\n'.format(record_counter, 
-                    record['id'], record['chip'], record['x'], record['y'], 
+                    record['tot_id'], record['chip'], record['x'], record['y'], 
                     record['ra'], record['dec'], size*2)
                 f.write(metadata)
                 record_counter +=1
