@@ -11,17 +11,19 @@ viana@stsci.edu
 '''
 
 import copy
+import glob
 import numpy as np
 import os
 import pyfits
 import yaml
-#import Image
+from PIL import Image
 import sys
 import socket
 
 # ----------------------------------------------------------------------------
-# Load the local patched version of PIL from viana's Dropbox
+# Load the machine specific settings.
 # ----------------------------------------------------------------------------
+
 
 def get_settings():
     '''
@@ -33,20 +35,29 @@ def get_settings():
     return data
 
 SETTINGS = get_settings()
-INPUT_PATH = SETTINGS['input_path']
+COORD_PATH = SETTINGS['coord_path']
+IMAGE_PATH = SETTINGS['image_path']
 OUTPUT_PATH = SETTINGS['output_path']
+OUTPUT_SIZE_LIST = SETTINGS['output_size_list']
 
-# Import local PIL patch
-#if socket.gethostname() == SETTINGS['hostname']:
-#    import_path = '/home/acv/Dropbox/Work/MTPipeline/Code/imaging/'
-#else:
-#    import_path = '/Users/viana/Dropbox/Work/MTPipeline/Code/imaging/'
-#sys.path.append(import_path)
-from PIL import Image
 
 # ----------------------------------------------------------------------------
 # Functions
 # ----------------------------------------------------------------------------
+
+def clean_up():
+    '''
+    Cleans up all the previous outputs.
+    '''
+    print 'Removing previous outputs.'
+    for field_number in range(1,8):
+        file_list = glob.glob(os.path.join(OUTPUT_PATH,'f{}/*.jpg'.format(field_number)))
+        for filename in file_list:
+            os.remove(filename)
+    filename = os.path.join(OUTPUT_PATH, 'metadata/m83_metadata.csv')
+    if os.path.exists(filename):
+        os.remove(filename)
+    print 'Previous outputs successfull removed.'
 
 
 def fits2numpycoords(x_in, y_in, ymax):
@@ -81,7 +92,7 @@ def make_images(data, coords, field):
     for row in coords:
         x = int(row['x'])
         y = int(row['y'])
-        for size in [50, 150]:
+        for size in OUTPUT_SIZE_LIST:
             try:
                 numpy_x, numpy_y = fits2numpycoords(x, y, data.shape[0])
                 subimage = data[\
@@ -100,19 +111,41 @@ def make_images(data, coords, field):
 
 def make_images_main():
     '''
-    The main controller. Builds a list of data and coordinates files 
-    for each field. The sets the base path for the files based on 
-    the machine being used. Finally loops over the data to create the 
-    images.
+    Builds a list of data and coordinates files for each field. Loops 
+    over the data to create the images and calls make_metadata().
     '''
-    coords = get_coords(os.path.join(INPUT_PATH, 
+    clean_up()
+    record_counter = 1
+    coords = get_coords(os.path.join(COORD_PATH,
         'cat_m83_manual_catalog_all_fields_for_alex_sep_30_2013-1.csv'))
-    for field_counter in range(1,8):
-        print 'Processing field {}'.format(field_counter)
-        field_coords = coords[np.where(coords['chip'] == field_counter)]
-        image_data = np.asarray(Image.open(os.path.join(INPUT_PATH, 
-            'M83-P{}-UByIH.jpg'.format(field_counter))))
-        make_images(image_data, field_coords, field_counter)
+    for field_number in range(1,8):
+        print 'Processing field {}'.format(field_number)
+        field_coords = coords[np.where(coords['chip'] == field_number)]
+        print 'Found {} records in the catalog.'.format(len(field_coords))
+        field_coords = field_coords[np.where(field_coords['flag'] != 8)]
+        print '{} records remaining after removing galaxies'.format(len(field_coords))
+        image_data = np.asarray(Image.open(os.path.join(IMAGE_PATH, 
+            'm83-p{}-131002.jpg'.format(field_number))))
+        make_images(image_data, field_coords, field_number)
+        record_counter = make_metadata(field_coords, record_counter)
+
+
+def make_metadata(field_coords, record_counter):
+    '''
+    Appends the metadata file.
+    '''
+    with open(os.path.join(OUTPUT_PATH, 'metadata/m83_metadata.csv'), 'w') as f:
+        if record_counter == 1:
+            f.write('# id, catalog_id, field, x, y, ra, dec, size\n')
+        for record in field_coords:
+            for size in OUTPUT_SIZE_LIST:
+                metadata = '{}, {}, {}, {}, {}, {}, {}, {}\n'.format(record_counter, 
+                    record['id'], record['chip'], record['x'], record['y'], 
+                    record['ra'], record['dec'], size*2)
+                f.write(metadata)
+                record_counter +=1
+    return record_counter
+
 
 # ----------------------------------------------------------------------------
 # For command line execution
