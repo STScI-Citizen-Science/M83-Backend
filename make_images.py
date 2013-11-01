@@ -11,7 +11,9 @@ viana@stsci.edu
 '''
 
 import copy
+import datetime
 import glob
+import logging
 import numpy as np
 import os
 import pyfits
@@ -20,8 +22,9 @@ from PIL import Image
 import sys
 import socket
 
+
 # ----------------------------------------------------------------------------
-# Load the machine specific settings.
+# Load the machine specific settings and set up the logging.
 # ----------------------------------------------------------------------------
 
 
@@ -34,11 +37,36 @@ def get_settings():
         data = yaml.load(f)
     return data
 
+
 SETTINGS = get_settings()
 COORD_PATH = SETTINGS['coord_path']
 IMAGE_PATH = SETTINGS['image_path']
 OUTPUT_PATH = SETTINGS['output_path']
 OUTPUT_SIZE_LIST = SETTINGS['output_size_list']
+
+
+def configure_logging():
+    '''
+    Configure the standard logging format. 
+    '''
+    filename = 'm83_imaging_'
+    filename += datetime.datetime.now().strftime('%Y-%m-%d-%H-%M') + '.log'
+    log_file = os.path.join(OUTPUT_PATH, 'logs', filename)
+    logging.basicConfig(filename = log_file,
+                        format = '%(asctime)s %(levelname)s: %(message)s',
+                        datefmt = '%m/%d/%Y %I:%M:%S %p', 
+                        level = logging.INFO)
+
+
+configure_logging()
+
+logging.info('COORD_PATH: {}'.format(COORD_PATH))
+logging.info('IMAGE_PATH: {}'.format(IMAGE_PATH))
+logging.info('OUTPUT_PATH: {}'.format(OUTPUT_PATH))
+output_size_str = ''
+for output_size in OUTPUT_SIZE_LIST:
+    output_size_str += str(output_size) + ' '
+logging.info('Output Sizes: {}'.format(output_size_str))
 
 
 # ----------------------------------------------------------------------------
@@ -60,6 +88,25 @@ def clean_up():
     print 'Previous outputs successfull removed.'
 
 
+def get_f1_delta(xbrad,ybrad):
+    """Return the coordinate deltas for the first field."""
+    # init fitted linear relation b/t Brad-Jen xy converison
+    x0=  2.58228520e+01
+    x1= -1.00916521e-02
+    y0= -7.26563777e+01
+    y1= -1.00990683e-02
+    
+    # establish shift (Brad-Jen)
+    xshift = -1 * (x1*xbrad + x0)
+    yshift = -1 * (y1*ybrad + y0)
+    
+    # apply shifts to extract Jen xy
+    # xjen = xbrad - xshift
+    # yjen = ybrad - yshift
+    
+    return xshift, yshift
+
+
 def fits2numpycoords(x_in, y_in, ymax):
     '''
     Transforms x,y from lower-left column-row coordinates (FITS) to 
@@ -72,15 +119,13 @@ def fits2numpycoords(x_in, y_in, ymax):
 
 def get_coords(coords_file):
     '''
-    Because the text files with the coordinates are malformed they can't be 
-    read in by numpy.genfromtxt. So instead this generated the coordinate 
-    data. I'm doing it this way so we have a record of what's being done to 
-    the input files.
+    Return the coordinate data.
 
     # flag = 8 is bkg galaxy which should be removed
     # dk_fl = 1 means use higher contrast image
     '''
     data = np.genfromtxt(coords_file, delimiter=',', names=True)
+    logging.info('Coordinate File: {}'.format(coords_file))
     return data
 
 
@@ -109,27 +154,6 @@ def make_images(data, coords, field):
                 print 'ValueError: {0} : {1}, ({2},{3})'.format(err, field, x, y)
 
 
-def make_images_main():
-    '''
-    Builds a list of data and coordinates files for each field. Loops 
-    over the data to create the images and calls make_metadata().
-    '''
-    clean_up()
-    record_counter = 1
-    coords = get_coords(os.path.join(COORD_PATH,
-        'cat_m83_manual_catalog_all_fields_for_alex_sep_30_2013-1.csv'))
-    for field_number in range(1,8):
-        print 'Processing field {}'.format(field_number)
-        field_coords = coords[np.where(coords['chip'] == field_number)]
-        print 'Found {} records in the catalog.'.format(len(field_coords))
-        field_coords = field_coords[np.where(field_coords['flag'] != 8)]
-        print '{} records remaining after removing galaxies'.format(len(field_coords))
-        image_data = np.asarray(Image.open(os.path.join(IMAGE_PATH, 
-            'm83-p{}-131002.jpg'.format(field_number))))
-        make_images(image_data, field_coords, field_number)
-        record_counter = make_metadata(field_coords, record_counter)
-
-
 def make_metadata(field_coords, record_counter):
     '''
     Appends the metadata file. Note that the id is a unique identifier 
@@ -140,8 +164,10 @@ def make_metadata(field_coords, record_counter):
     catalog for the catalog_id because the id value in the catalog is 
     unique to each field but not unique to the entire catalog. 
     '''
-    with open(os.path.join(OUTPUT_PATH, 'metadata/m83_metadata.csv'), 'w') as f:
+    metadata_file = os.path.join(OUTPUT_PATH, 'metadata/m83_metadata.csv')
+    with open(metadata_file, 'a') as f:
         if record_counter == 1:
+            logging.info('Metadata File: {}'.format(metadata_file))
             f.write('# id, catalog_id, field, x, y, ra, dec, size\n')
         for record in field_coords:
             for size in OUTPUT_SIZE_LIST:
@@ -151,6 +177,60 @@ def make_metadata(field_coords, record_counter):
                 f.write(metadata)
                 record_counter +=1
     return record_counter
+
+
+def transform_coordinates(field_number, field_coords):
+    '''
+    Apply and log a linear coordinate transformation. 
+    '''
+    if field_number == 1:
+        delta_x ,delta_y = get_f1_delta(field_coords['x'], field_coords['y'])
+    elif field_number == 2:
+        delta_x = 75
+        delta_y = -3643
+    else:
+        delta_x = 0
+        delta_y = 0
+    field_coords['x'] = field_coords['x'] + delta_x
+    field_coords['y'] = field_coords['y'] + delta_y
+    logging.info('delta_x: {}, delta_y: {}'.format(delta_x, delta_y))
+    return field_coords
+
+# ----------------------------------------------------------------------------
+# The main controller
+# ----------------------------------------------------------------------------
+
+
+def make_images_main():
+    '''
+    Builds a list of data and coordinates files for each field. Loops 
+    over the data to create the images and calls make_metadata().
+    '''
+    clean_up()
+
+    # Get the coordinates.
+    record_counter = 1
+    coords = get_coords(os.path.join(COORD_PATH,
+        'cat_m83_manual_catalog_all_fields_for_alex_sep_30_2013-1.csv'))
+    logging.info('Total Catalog Size: {}'.format(len(coords)))
+
+    for field_number in range(1,8):
+
+        # Trim the coordinates for each field.
+        print 'Processing field {}'.format(field_number)
+        logging.info('Processing field {}'.format(field_number))
+        field_coords = coords[np.where(coords['chip'] == field_number)]
+        logging.info('Found {} records in the catalog.'.format(len(field_coords)))
+        field_coords = field_coords[np.where(field_coords['flag'] != 8)]
+        logging.info('{} records remaining after removing galaxies'.format(len(field_coords)))
+        field_coords = transform_coordinates(field_number, field_coords)
+
+        # Create the images and the metadata.
+        image_file = os.path.join(IMAGE_PATH, 'm83-p{}-131002.jpg'.format(field_number))
+        logging.info('Image File: {}'.format(image_file))
+        image_data = np.asarray(Image.open(image_file))
+        make_images(image_data, field_coords, field_number)
+        record_counter = make_metadata(field_coords, record_counter)
 
 
 # ----------------------------------------------------------------------------
