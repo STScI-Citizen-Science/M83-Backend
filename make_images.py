@@ -135,8 +135,8 @@ def make_images(data, coords, field):
     '''
     counter = 0
     for row in coords:
-        x = int(row['x'])
-        y = int(row['y'])
+        x = int(row['x_brad'])
+        y = int(row['y_brad'])
         for size in OUTPUT_SIZE_LIST:
             try:
                 numpy_x, numpy_y = fits2numpycoords(x, y, data.shape[0])
@@ -168,12 +168,13 @@ def make_metadata(field_coords, record_counter):
     with open(metadata_file, 'a') as f:
         if record_counter == 1:
             logging.info('Metadata File: {}'.format(metadata_file))
-            f.write('# id, catalog_id, field, x, y, ra, dec, size\n')
+            f.write('# id, catalog_id, field, x_brad, y_brad, ra, dec, x_mos, y_mos, size\n')
         for record in field_coords:
             for size in OUTPUT_SIZE_LIST:
-                metadata = '{}, {}, {}, {}, {}, {}, {}, {}\n'.format(record_counter, 
-                    record['tot_id'], record['chip'], record['x'], record['y'], 
-                    record['ra'], record['dec'], size*2)
+                metadata = '{}, {}, {}, {}, {}, {}, {}, {}, {}, {}\n'.format(
+                    record_counter, record['tot_id'], record['chip'], 
+                    record['x_brad'], record['y_brad'], record['ra'], record['dec'],
+                    record['x_mos'], record['y_mos'], size*2)
                 f.write(metadata)
                 record_counter +=1
     return record_counter
@@ -184,15 +185,15 @@ def transform_coordinates(field_number, field_coords):
     Apply and log a linear coordinate transformation. 
     '''
     if field_number == 1:
-        delta_x ,delta_y = get_f1_delta(field_coords['x'], field_coords['y'])
+        delta_x ,delta_y = get_f1_delta(field_coords['x_brad'], field_coords['y_brad'])
     elif field_number == 2:
         delta_x = 75
         delta_y = -3643
     else:
         delta_x = 0
         delta_y = 0
-    field_coords['x'] = field_coords['x'] + delta_x
-    field_coords['y'] = field_coords['y'] + delta_y
+    field_coords['x_brad'] = field_coords['x_brad'] + delta_x
+    field_coords['y_brad'] = field_coords['y_brad'] + delta_y
     logging.info('delta_x: {}, delta_y: {}'.format(delta_x, delta_y))
     return field_coords
 
@@ -211,7 +212,7 @@ def make_images_main():
     # Get the coordinates.
     record_counter = 1
     coords = get_coords(os.path.join(COORD_PATH,
-        'cat_m83_manual_catalog_all_fields_for_alex_sep_30_2013-1.csv'))
+        'cat_m83_manual_catalog_all_fields_for_alex_nov_22_2013_transform_short_header.csv'))
     logging.info('Total Catalog Size: {}'.format(len(coords)))
 
     for field_number in range(1,8):
@@ -221,7 +222,7 @@ def make_images_main():
         logging.info('Processing field {}'.format(field_number))
         field_coords = coords[np.where(coords['chip'] == field_number)]
         logging.info('Found {} records in the catalog.'.format(len(field_coords)))
-        field_coords = field_coords[np.where(field_coords['flag'] != 8)]
+        field_coords = field_coords[np.where(field_coords['flag'] < 19.5)]
         logging.info('{} records remaining after removing galaxies'.format(len(field_coords)))
         field_coords = transform_coordinates(field_number, field_coords)
 
